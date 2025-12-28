@@ -1,0 +1,52 @@
+build/
+build-release/
+.vscode/settings.json
+tags
+.cache/
+test/
+bld/
+run/
+.clangd/
+.nvimlog
+.vscode
+.metadata
+*.lock
+flutter/defunct/
+flutter/googleapi/fcm/.dart_tool/
+flutter/googleapi/fcm/lib/send_message.exe
+flutter/ppos_auth_server/.flutter-plugins
+flutter/ppos_auth_server/.flutter-plugins-dependencies
+flutter/ppos_order_app/android/
+flutter/ppos_order_app/ios/
+flutter/ppos_order_app/linux/
+flutter/ppos_order_app/macos/
+flutter/ppos_order_app/web/
+flutter/ppos_order_app/windows/
+flutter/bkkkmam_pwa/ios/
+flutter/bkkkmam_pwa/linux/
+flutter/bkkkmam_pwa/macos/
+flutter/bkkkmam_pwa/windows/
+flutter/packages/presentation-displays/
+flutter/packages/presentation_displays/
+flutter/redo_ppos_mobile_companion/
+libxl_linux/examples/code.blocks/
+libxl_linux/examples/python/
+libxl_linux/examples/qt/
+retrymake
+sqlite3/script/
+tst/
+*defunct
+*flutter-plugin*
+generated_plugin*
+GeneratedPlugin*
+PposDemo/
+# flutter/package/device_info/.flutter-plugins-dependencies
+# flutter/package/firebase_login/.flutter-plugins-dependencies
+# flutter/package/local_setting/.flutter-plugins-dependencies
+# flutter/package/ppos_database_service/.flutter-plugins-dependencies
+# flutter/package/scanner_input_window/.flutter-plugins-dependencies
+# flutter/rps_online/linux/flutter/generated_plugin_registrant.cc
+# flutter/rps_online/linux/flutter/generated_plugins.cmake
+# flutter/rps_online/macos/Flutter/GeneratedPluginRegistrant.swift
+# flutter/rps_online/windows/flutter/generated_plugin_registrant.cc
+# flutter/rps_online/windows/flutter/generated_plugins.cmake
