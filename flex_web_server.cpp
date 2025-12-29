@@ -16,6 +16,7 @@
 #include "beast.h"
 #include "server_certificate.hpp"
 
+#include "logger.h"
 #include <algorithm>
 #include <boost/asio/bind_executor.hpp>
 #include <boost/asio/dispatch.hpp>
@@ -32,15 +33,15 @@
 #include <boost/config.hpp>
 #include <boost/make_unique.hpp>
 #include <boost/optional.hpp>
-#include <fmt/format.h>
 #include <cstdlib>
+#include <filesystem>
+#include <fmt/format.h>
 #include <iostream>
 #include <memory>
 #include <queue>
 #include <string>
 #include <thread>
 #include <vector>
-#include "logger.h"
 
 namespace beast = boost::beast;          // from <boost/beast.hpp>
 namespace http = beast::http;            // from <boost/beast/http.hpp>
@@ -817,7 +818,7 @@ void StartFlexWebServer(const std::string ip, unsigned short port, std::string_v
 
             ShowLog(fmt::format("Starting http/ws server at {} on port {}", ip, port));
             ShowLog(fmt::format("http root folder: {}", wwwroot));
-            CreateNonExistingFolders(*doc_root);
+            std::filesystem::create_directories(wwwroot);
 
             // The io_context is required for all I/O
             ioc = std::make_shared<net::io_context>(threads);
