@@ -870,6 +870,7 @@ void StartFlexWebServer(const std::string ip, unsigned short port, std::string_v
 void StopFlexWebServer() {
     ShowLog("FlexWebServer: Stopping Web Server...");
     if (ioc) {
+        ShowLog("FlexWebServer: stopping io_context...");
         ioc->stop();
     }
     ShowLog("FlexWebServer: stopped!");
