@@ -2,7 +2,7 @@
 #include <iostream>
 #include <sstream>
 #include <fmt/format.h>
-#include "logger.h"
+#include "logger/logger.h"
 
 std::size_t fnWriteData(void *ptr, std::size_t size, std::size_t nmemb, void *stream) {
     std::string data((const char *)ptr, (std::size_t)size * nmemb);

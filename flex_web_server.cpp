@@ -16,7 +16,7 @@
 #include "beast.h"
 #include "server_certificate.hpp"
 
-#include "logger.h"
+#include "logger/logger.h"
 #include <algorithm>
 #include <boost/asio/bind_executor.hpp>
 #include <boost/asio/dispatch.hpp>
@@ -834,7 +834,7 @@ void StartFlexWebServer(const std::string ip, unsigned short port, std::string_v
                     ShowLog(fmt::format("webserver: loaded cert(ctx) from {}, {}", certChainFile, privateKeyFile));
                 } catch (boost::system::system_error &) {
                     load_server_certificate(ctx);
-                    ShowLog("webserver: loaded cert(ctx) from self-signed ssl keys");
+                    LOG_ERROR("webserver: loaded cert(ctx) from self-signed ssl keys");
                 }
             } else
                 load_server_certificate(ctx);
@@ -860,9 +860,9 @@ void StartFlexWebServer(const std::string ip, unsigned short port, std::string_v
                 ShowLog(fmt::format("Listener failed to listen on {}: {}", ip, port));
             }
         } catch (std::exception& e) {
-            ShowLog(fmt::format("Exception: {}", e.what()));
+            LOG_ERROR(fmt::format("Exception: {}", e.what()));
         } catch (...) {
-            ShowLog("Unknown exception: ");
+            LOG_ERROR("Unknown exception: ");
         }
     }).detach();
 }
