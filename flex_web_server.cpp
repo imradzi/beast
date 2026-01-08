@@ -816,8 +816,8 @@ void StartFlexWebServer(const std::string ip, unsigned short port, std::string_v
             auto const address = net::ip::make_address(ip);
             auto const doc_root = std::make_shared<std::string>(wwwroot);
 
-            ShowLog(fmt::format("Starting http/ws server at {} on port {}", ip, port));
-            ShowLog(fmt::format("http root folder: {}", wwwroot));
+            LOG_INFO("Starting http/ws server at {} on port {}", ip, port);
+            LOG_INFO("http root folder: {}", wwwroot);
             std::filesystem::create_directories(wwwroot);
 
             // The io_context is required for all I/O
@@ -831,10 +831,10 @@ void StartFlexWebServer(const std::string ip, unsigned short port, std::string_v
                     ctx.use_certificate_chain_file(certChainFile);
                     ctx.use_private_key_file(privateKeyFile, boost::asio::ssl::context::pem);
                     if (!verifyFile.empty()) ctx.load_verify_file(verifyFile);
-                    ShowLog(fmt::format("webserver: loaded cert(ctx) from {}, {}", certChainFile, privateKeyFile));
+                    LOG_INFO("webserver: loaded cert(ctx) from {}, {}", certChainFile, privateKeyFile);
                 } catch (boost::system::system_error &) {
                     load_server_certificate(ctx);
-                    LOG_ERROR("webserver: loaded cert(ctx) from self-signed ssl keys");
+                    LOG_WARN("webserver: loaded cert(ctx) from self-signed ssl keys");
                 }
             } else
                 load_server_certificate(ctx);
@@ -857,7 +857,7 @@ void StartFlexWebServer(const std::string ip, unsigned short port, std::string_v
                 for (auto& t : v)
                     t.join();
             } else {
-                ShowLog(fmt::format("Listener failed to listen on {}: {}", ip, port));
+                LOG_WARN("Listener failed to listen on {}: {}", ip, port);
             }
         } catch (std::exception& e) {
             LOG_ERROR(fmt::format("Exception: {}", e.what()));
