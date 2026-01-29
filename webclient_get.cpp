@@ -29,8 +29,8 @@ std::tuple<std::string, int64_t> WebClient::Get(const std::string &url, const st
         if (hdr) curl_slist_free_all(hdr);
         /* Check for errors */
         if (res != CURLE_OK) {
-            auto errmsg = fmt::format("curl_easy_perform() failed: {}", curl_easy_strerror(res));
-            ShowLog(errmsg);
+            std::string errmsg = curl_easy_strerror(res);
+            LOG_ERROR("curl_easy_perform() failed : {}: url: ", errmsg, url);
             throw errmsg;
         }
         long response_code;
