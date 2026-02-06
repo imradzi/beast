@@ -157,9 +157,7 @@ http::message_generator handle_request(
         || req.method() == http::verb::delete_) {
         ;  //
     } else {
-#ifdef _DEBUG
-        LOG_INFO("{} failed!!!", boost::beast::http::to_string(req.method());
-#endif
+        LOG_ERROR("{} failed!!!", boost::beast::http::to_string(req.method());
         return bad_request("Unknown HTTP-method");
     }
 
