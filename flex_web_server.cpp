@@ -100,7 +100,7 @@ http::message_generator handle_request(
 
     std::string _path = req.target();
 #ifdef _DEBUG
-    ShowLog(fmt::format("Target: {}", _path));
+    LOG_INFO("Target: {}", _path);
 #endif
     uint64_t size = 1;
     auto const head_response =
@@ -146,7 +146,7 @@ http::message_generator handle_request(
 
     if (req.method() == http::verb::options) {
 #ifdef _DEBUG
-        ShowLog("OPTION requested");
+        LOG_INFO("OPTION requested");
 #endif
         return options_response();
     }
@@ -158,7 +158,7 @@ http::message_generator handle_request(
         ;  //
     } else {
 #ifdef _DEBUG
-        ShowLog(fmt::format("{} failed!!!", boost::beast::http::to_string(req.method())));
+        LOG_INFO("{} failed!!!", boost::beast::http::to_string(req.method());
 #endif
         return bad_request("Unknown HTTP-method");
     }
@@ -209,7 +209,7 @@ http::message_generator handle_request(
             path.append("index.html");
     }
 
-    ShowLog(fmt::format("webserver: opening {}", path));
+    LOG_INFO("webserver: opening {}", path);
     // Attempt to open the file
     beast::error_code ec;
     http::file_body::value_type body;
@@ -321,7 +321,7 @@ private:
             ss << x;
         }
         ss << "]" << std::endl;
-        ShowLog(ss.str());
+        LOG_INFO(ss.str());
     }
 
     void on_read(beast::error_code ec, std::size_t bytes_transferred) {
@@ -339,7 +339,7 @@ private:
 
             // Echo the message
 #ifdef _DEBUG
-        ShowLog(fmt::format("Received data: {}", beast::buffers_to_string(buffer_.data())));
+        LOG_INFO("Received data: {}", beast::buffers_to_string(buffer_.data());
 #endif
         res = process_websocket_command(buffer_.data());
         if (res && !res->empty()) {
@@ -860,7 +860,7 @@ void StartFlexWebServer(const std::string ip, unsigned short port, std::string_v
                 LOG_WARN("Listener failed to listen on {}: {}", ip, port);
             }
         } catch (std::exception& e) {
-            LOG_ERROR(fmt::format("Exception: {}", e.what()));
+            LOG_ERROR("Exception: {}", e.what());
         } catch (...) {
             LOG_ERROR("Unknown exception: ");
         }
@@ -868,10 +868,10 @@ void StartFlexWebServer(const std::string ip, unsigned short port, std::string_v
 }
 
 void StopFlexWebServer() {
-    ShowLog("FlexWebServer: Stopping Web Server...");
+    LOG_INFO("FlexWebServer: Stopping Web Server...");
     if (ioc) {
-        ShowLog("FlexWebServer: stopping io_context...");
+        LOG_INFO("FlexWebServer: stopping io_context...");
         ioc->stop();
     }
-    ShowLog("FlexWebServer: stopped!");
+    LOG_INFO("FlexWebServer: stopped!");
 }

@@ -35,7 +35,7 @@ std::tuple<std::string, int64_t> WebClient::Post(const std::string &url, const s
         if (hdr) curl_slist_free_all(hdr);
         if (res != CURLE_OK) {
             auto errmsg = fmt::format("curl_easy_perform() failed: {}", curl_easy_strerror(res));
-            ShowLog(errmsg);
+            LOG_INFO(errmsg);
             throw std::runtime_error(errmsg);
         }
         long response_code;
