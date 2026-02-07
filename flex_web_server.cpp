@@ -337,7 +337,7 @@ private:
 
             // Echo the message
 #ifdef _DEBUG
-        LOG_INFO("Received data: {}", beast::buffers_to_string(buffer_.data());
+        LOG_INFO("Received data: {}", beast::buffers_to_string(buffer_.data()));
 #endif
         res = process_websocket_command(buffer_.data());
         if (res && !res->empty()) {
