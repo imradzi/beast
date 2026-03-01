@@ -857,7 +857,7 @@ void StartFlexWebServer(const std::string ip, unsigned short port, std::string_v
             } else {
                 LOG_WARN("Listener failed to listen on {}: {}", ip, port);
             }
-        } catch (std::exception& e) {
+        } catch (const std::exception& e) {
             LOG_ERROR("Exception: {}", e.what());
         } catch (...) {
             LOG_ERROR("Unknown exception: ");
