@@ -116,9 +116,8 @@ DeepSeekResponse DeepSeekClient::Chat(const std::string& question, const std::st
             result.conversationId = conversationId;
         }
 
-        LOG_INFO("DeepSeekClient::Chat: success, model={} tokens={} answer_len={}",
-                 result.modelUsed, result.tokensUsed, result.answer.size());
-
+        LOG_INFO("DeepSeekClient::Chat: success, model={} tokens={} answer_len={}", result.modelUsed, result.tokensUsed, result.answer.size());
+        LOG_INFO("DeepSeekClient::Chat: result: {}", result.answer);
     } catch (const std::exception& e) {
         result.errorMessage = fmt::format("Exception: {}", e.what());
         LOG_ERROR("DeepSeekClient::Chat: {}", result.errorMessage);
