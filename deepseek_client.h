@@ -25,6 +25,9 @@ public:
     /// Set a new API key at runtime.
     void SetApiKey(const std::string& apiKey) { apiKey_ = apiKey; }
 
+    /// Set a new base URL at runtime (e.g. to switch from DeepSeek to OpenAI).
+    void SetBaseUrl(const std::string& baseUrl) { baseUrl_ = baseUrl; }
+
     /// Set a new model at runtime.
     void SetModel(const std::string& model) { model_ = model; }
 
