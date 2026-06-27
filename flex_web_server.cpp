@@ -18,6 +18,7 @@
 
 #include "logger/logger.h"
 #include <algorithm>
+#include <atomic>
 #include <boost/asio/bind_executor.hpp>
 #include <boost/asio/dispatch.hpp>
 #include <boost/asio/ip/tcp.hpp>
@@ -38,6 +39,7 @@
 #include <fmt/format.h>
 #include <iostream>
 #include <memory>
+#include <mutex>
 #include <queue>
 #include <string>
 #include <thread>
@@ -54,6 +56,24 @@ extern beast::string_view mime_type(beast::string_view path);
 extern std::string path_cat(beast::string_view base, beast::string_view path);
 extern void fail(beast::error_code ec, char const* what);
 
+// CORS headers applied to all responses (PWA/browser compatibility)
+namespace {
+    constexpr auto CORS_ALLOW_HEADERS = "Origin, X-Requested-With, Content-Type, Accept, Authorization, Access-Control-Allow-Origin, X-Session-Key";
+    constexpr auto CORS_ALLOW_METHODS = "POST, GET, PUT, DELETE, PATCH, HEAD, OPTIONS";
+    constexpr auto CORS_ALLOW_ORIGIN = "*";
+    constexpr auto CORS_ALLOW_CREDENTIALS = "true";
+
+    // Helper to apply common CORS + server headers to any response
+    template<class Res>
+    void apply_common_headers(Res& res) {
+        res.set(http::field::server, BOOST_BEAST_VERSION_STRING);
+        res.set(http::field::access_control_allow_headers, CORS_ALLOW_HEADERS);
+        res.set(http::field::access_control_allow_methods, CORS_ALLOW_METHODS);
+        res.set(http::field::access_control_allow_origin, CORS_ALLOW_ORIGIN);
+        res.set(http::field::access_control_allow_credentials, CORS_ALLOW_CREDENTIALS);
+    }
+}
+
 // Return a response for the given request.
 //
 // The concrete type of the response message (which depends on the
@@ -66,10 +86,10 @@ http::message_generator handle_request(
     auto const bad_request =
         [&req](beast::string_view why) {
             http::response<http::string_body> res {http::status::bad_request, req.version()};
-            res.set(http::field::server, BOOST_BEAST_VERSION_STRING);
-            res.set(http::field::content_type, "text/html");
+            apply_common_headers(res);
+            res.set(http::field::content_type, "application/json");
             res.keep_alive(req.keep_alive());
-            res.body() = std::string(why);
+            res.body() = R"({"success":false,"error":{"code":"BAD_REQUEST","message":")" + std::string(why) + R"("}})";
             res.prepare_payload();
             return res;
         };
@@ -78,10 +98,10 @@ http::message_generator handle_request(
     auto const not_found =
         [&req](beast::string_view target) {
             http::response<http::string_body> res {http::status::not_found, req.version()};
-            res.set(http::field::server, BOOST_BEAST_VERSION_STRING);
-            res.set(http::field::content_type, "text/html");
+            apply_common_headers(res);
+            res.set(http::field::content_type, "application/json");
             res.keep_alive(req.keep_alive());
-            res.body() = "The resource '" + std::string(target) + "' was not found.";
+            res.body() = R"({"success":false,"error":{"code":"NOT_FOUND","message":"Resource not found"}})";
             res.prepare_payload();
             return res;
         };
@@ -90,10 +110,10 @@ http::message_generator handle_request(
     auto const server_error =
         [&req](beast::string_view what) {
             http::response<http::string_body> res {http::status::internal_server_error, req.version()};
-            res.set(http::field::server, BOOST_BEAST_VERSION_STRING);
-            res.set(http::field::content_type, "text/html");
+            apply_common_headers(res);
+            res.set(http::field::content_type, "application/json");
             res.keep_alive(req.keep_alive());
-            res.body() = "An error occurred: '" + std::string(what) + "'";
+            res.body() = R"({"success":false,"error":{"code":"INTERNAL_ERROR","message":")" + std::string(what) + R"("}})";
             res.prepare_payload();
             return res;
         };
@@ -106,7 +126,7 @@ http::message_generator handle_request(
     auto const head_response =
         [&req, &size, &_path]() {
             http::response<http::empty_body> res {http::status::ok, req.version()};
-            res.set(http::field::server, BOOST_BEAST_VERSION_STRING);
+            apply_common_headers(res);
             res.set(http::field::content_type, mime_type(_path));
             res.content_length(size);
             res.keep_alive(req.keep_alive());
@@ -120,25 +140,13 @@ http::message_generator handle_request(
     auto const options_response =
         [&req, &size, &_path]() {
             http::response<http::empty_body> res {http::status::ok, req.version()};
-            res.set(http::field::server, BOOST_BEAST_VERSION_STRING);
+            apply_common_headers(res);
 
             auto originHeader = req.find(boost::beast::http::field::origin);
             if (originHeader != req.end()) {
-                // auto originHeader = req[boost::beast::http::field::host].to_string();
                 std::string origin(originHeader->value().data(), originHeader->value().size());
-                // Process the origin value as needed
-                // BOOST_LOG_TRIVIAL(debug) << "CORS Request Origin: " << origin << std::endl;
-                // std::string origin = originHeader.value().to_string();
-
-                // std::cout << "Origin: " << origin << std::endl;
                 res.set(http::field::access_control_allow_origin, origin);
-            } else {
-                // BOOST_LOG_TRIVIAL(warning) << "CORS: Host not found in the header";
-                res.set(http::field::access_control_allow_origin, "*");
             }
-            res.set(http::field::access_control_allow_headers, "Origin, X-Requested-With, Content-Type, Accept, Authorization, Access-Control-Allow-Origin");
-            res.set(http::field::access_control_allow_methods, "POST, GET, PUT, DELETE, PATCH, HEAD");
-            res.set(http::field::access_control_allow_credentials, "true");
             res.content_length(size);
             res.keep_alive(req.keep_alive());
             return res;
@@ -176,24 +184,18 @@ http::message_generator handle_request(
 
     if (type == 1) {
         http::response<http::string_body> res {http::status::ok, req.version()};
-        res.set(http::field::server, BOOST_BEAST_VERSION_STRING);
-        res.set(http::field::content_type, "text/html");
-        res.set(http::field::access_control_allow_headers, "Origin, X-Requested-With, Content-Type, Accept, Authorization, Access-Control-Allow-Origin");
-        res.set(http::field::access_control_allow_methods, "POST, GET, PUT, DELETE, PATCH, HEAD");
-        res.set(http::field::access_control_allow_origin, "*");
-        res.set(http::field::access_control_allow_credentials, "true");
+        apply_common_headers(res);
+        // Auto-detect JSON responses (start with { or [)
+        bool isJson = (!path.empty() && (path[0] == '{' || path[0] == '['));
+        res.set(http::field::content_type, isJson ? "application/json" : "text/html");
         res.keep_alive(req.keep_alive());
         res.body() = path;
         res.prepare_payload();
         return res;
     } else if (type == 2 && binarybuf != nullptr) {
         http::response<http::buffer_body> res {http::status::ok, req.version()};
-        res.set(http::field::server, BOOST_BEAST_VERSION_STRING);
+        apply_common_headers(res);
         res.set(http::field::content_type, "application/octet-stream");
-        res.set(http::field::access_control_allow_headers, "Origin, X-Requested-With, Content-Type, Accept, Authorization, Access-Control-Allow-Origin");
-        res.set(http::field::access_control_allow_methods, "POST, GET, PUT, DELETE, PATCH, HEAD");
-        res.set(http::field::access_control_allow_origin, "*");
-        res.set(http::field::access_control_allow_credentials, "true");
         res.keep_alive(req.keep_alive());
         res.body().data = binarybuf->data();
         res.body().size = binarybuf->size();
@@ -214,24 +216,40 @@ http::message_generator handle_request(
     body.open(path.c_str(), beast::file_mode::scan, ec);
 
     // Handle the case where the file doesn't exist
-    if (ec == beast::errc::no_such_file_or_directory)
+    if (ec == beast::errc::no_such_file_or_directory) {
+        // SPA fallback: serve index.html for non-file routes (no extension)
+        // This allows the PWA client-side router to handle routes like /stock, /sales, etc.
+        std::string_view target = req.target();
+        auto dotPos = target.rfind('.');
+        auto slashPos = target.rfind('/');
+        // No file extension found (or dot is before last slash) → SPA fallback
+        if (dotPos == std::string_view::npos || (slashPos != std::string_view::npos && dotPos < slashPos)) {
+            // Don't fallback for API calls
+            if (target.find("/api/") == std::string_view::npos) {
+                auto indexPath = path_cat(doc_root, "index.html");
+                beast::error_code ec2;
+                body.open(indexPath.c_str(), beast::file_mode::scan, ec2);
+                if (!ec2) {
+                    path = indexPath;
+                    size = body.size();
+                    goto serve_file;
+                }
+            }
+        }
         return not_found(req.target());
+    }
 
     // Handle an unknown error
     if (ec)
         return server_error(ec.message());
 
     // Cache the size since we need it after the move
-
+serve_file:
     size = body.size();
     // Respond to HEAD request
     if (req.method() == http::verb::head) {
         http::response<http::empty_body> res {http::status::ok, req.version()};
-        res.set(http::field::server, BOOST_BEAST_VERSION_STRING);
-        res.set(http::field::access_control_allow_headers, "Origin, X-Requested-With, Content-Type, Accept, Authorization, Access-Control-Allow-Origin");
-        res.set(http::field::access_control_allow_methods, "POST, GET, PUT, DELETE, PATCH, HEAD");
-        res.set(http::field::access_control_allow_origin, "*");
-        res.set(http::field::access_control_allow_credentials, "true");
+        apply_common_headers(res);
         res.set(http::field::content_type, mime_type(path));
         res.content_length(size);
         res.keep_alive(req.keep_alive());
@@ -243,12 +261,8 @@ http::message_generator handle_request(
         std::piecewise_construct,
         std::make_tuple(std::move(body)),
         std::make_tuple(http::status::ok, req.version())};
-    res.set(http::field::server, BOOST_BEAST_VERSION_STRING);
+    apply_common_headers(res);
     res.set(http::field::content_type, mime_type(path));
-    res.set(http::field::access_control_allow_headers, "Origin, X-Requested-With, Content-Type, Accept, Authorization, Access-Control-Allow-Origin");
-    res.set(http::field::access_control_allow_methods, "POST, GET, PUT, DELETE, PATCH, HEAD");
-    res.set(http::field::access_control_allow_origin, "*");
-    res.set(http::field::access_control_allow_credentials, "true");
     res.content_length(size);
     res.keep_alive(req.keep_alive());
     return res;
@@ -313,13 +327,9 @@ private:
     }
 
     void dump(std::shared_ptr<std::vector<char>> res) {
-        std::stringstream ss;
-        ss << "Dumping res [";
-        for (auto x : *res) {
-            ss << x;
-        }
-        ss << "]" << std::endl;
-        LOG_INFO(ss.str());
+#ifdef _DEBUG
+        LOG_INFO("WebSocket sending: {} bytes", res->size());
+#endif
     }
 
     void on_read(beast::error_code ec, std::size_t bytes_transferred) {
@@ -330,12 +340,13 @@ private:
             return;
 
         if (ec == beast::error::timeout) {
+            do_read();  // keep reading after timeout
             return;
         }
 
         if (ec) return fail(ec, "read");
 
-            // Echo the message
+            // Process the message
 #ifdef _DEBUG
         LOG_INFO("Received data: {}", beast::buffers_to_string(buffer_.data()));
 #endif
@@ -345,6 +356,10 @@ private:
             dump(res);
             derived().ws().text(derived().ws().got_text());
             derived().ws().async_write(buf, beast::bind_front_handler(&websocket_session::on_write, derived().shared_from_this()));
+        } else {
+            // No response to send — clear buffer and continue reading
+            buffer_.consume(buffer_.size());
+            do_read();
         }
     }
 
@@ -455,7 +470,8 @@ public:
 
         // Apply a reasonable limit to the allowed size
         // of the body in bytes to prevent abuse.
-        parser_->body_limit(10000);
+        // 1MB — sufficient for API calls with line items, stock imports, etc.
+        parser_->body_limit(1000000);
 
         // Set the timeout.
         beast::get_lowest_layer(
@@ -791,12 +807,17 @@ private:
 
     void on_accept(beast::error_code ec, tcp::socket socket) {
         if (!ec) {
-            // Create the detector http_session and run it
-            std::make_shared<detect_session>(
-                std::move(socket),
-                ctx_,
-                doc_root_)
-                ->run();
+            try {
+                std::make_shared<detect_session>(
+                    std::move(socket),
+                    ctx_,
+                    doc_root_)
+                    ->run();
+            } catch (const std::exception& e) {
+                LOG_ERROR("listener::on_accept — failed to create session: {}", e.what());
+            } catch (...) {
+                LOG_ERROR("listener::on_accept — unknown exception creating session");
+            }
         }
 
         // Accept another connection
@@ -805,21 +826,28 @@ private:
 };
 
 //------------------------------------------------------------------------------
-static std::shared_ptr<net::io_context> ioc {nullptr};
+// Server lifecycle management — thread-safe start/stop
+static std::shared_ptr<net::io_context> g_ioc {nullptr};
+static std::mutex g_ioc_mutex;
+static std::atomic<bool> g_server_running {false};
 
 void StartFlexWebServer(const std::string ip, unsigned short port, std::string_view wwwroot, int threads, const std::string& certChainFile, const std::string& privateKeyFile, const std::string& verifyFile) {
-    // Check command line arguments.
-    std::thread([=] {
+    // Capture wwwroot by value since it's a string_view
+    std::thread([=, wwwroot_str = std::string(wwwroot)] {
         try {
             auto const address = net::ip::make_address(ip);
-            auto const doc_root = std::make_shared<std::string>(wwwroot);
+            auto const doc_root = std::make_shared<std::string>(wwwroot_str);
 
             LOG_INFO("Starting http/ws server at {} on port {}", ip, port);
-            LOG_INFO("http root folder: {}", wwwroot);
-            std::filesystem::create_directories(wwwroot);
+            LOG_INFO("http root folder: {}", wwwroot_str);
+            std::filesystem::create_directories(wwwroot_str);
 
             // The io_context is required for all I/O
-            ioc = std::make_shared<net::io_context>(threads);
+            auto local_ioc = std::make_shared<net::io_context>(threads);
+            {
+                std::lock_guard<std::mutex> lock(g_ioc_mutex);
+                g_ioc = local_ioc;
+            }
 
             // The SSL context is required, and holds certificates
             ssl::context ctx {ssl::context::tlsv12};
@@ -838,38 +866,53 @@ void StartFlexWebServer(const std::string ip, unsigned short port, std::string_v
                 load_server_certificate(ctx);
 
             // Create and launch a listening port
-            auto watcher = std::make_shared<listener>(*ioc.get(), ctx, tcp::endpoint {address, port}, doc_root);
+            auto watcher = std::make_shared<listener>(*local_ioc, ctx, tcp::endpoint {address, port}, doc_root);
 
             if (watcher->isValid) {
+                g_server_running.store(true, std::memory_order_release);
                 watcher->run();
+
                 // Run the I/O service on the requested number of threads
                 std::vector<std::thread> v;
                 v.reserve(threads - 1);
                 for (auto i = threads - 1; i > 0; --i)
-                    v.emplace_back([] { ioc->run(); });
-                ioc->run();
+                    v.emplace_back([&local_ioc] { local_ioc->run(); });
+                local_ioc->run();
 
-                // (If we get here, it means we got a SIGINT or SIGTERM)
-
-                // Block until all the threads exit     
+                // Block until all the threads exit
                 for (auto& t : v)
                     t.join();
             } else {
-                LOG_WARN("Listener failed to listen on {}: {}", ip, port);
+                LOG_ERROR("Listener failed to listen on {}: {}", ip, port);
             }
+            g_server_running.store(false, std::memory_order_release);
         } catch (const std::exception& e) {
-            LOG_ERROR("Exception: {}", e.what());
+            LOG_ERROR("StartFlexWebServer exception: {}", e.what());
+            g_server_running.store(false, std::memory_order_release);
         } catch (...) {
-            LOG_ERROR("Unknown exception: ");
+            LOG_ERROR("StartFlexWebServer: Unknown exception");
+            g_server_running.store(false, std::memory_order_release);
         }
     }).detach();
 }
 
 void StopFlexWebServer() {
     LOG_INFO("FlexWebServer: Stopping Web Server...");
-    if (ioc) {
+    std::shared_ptr<net::io_context> local_ioc;
+    {
+        std::lock_guard<std::mutex> lock(g_ioc_mutex);
+        local_ioc = g_ioc;
+        g_ioc.reset();
+    }
+    if (local_ioc) {
         LOG_INFO("FlexWebServer: stopping io_context...");
-        ioc->stop();
+        local_ioc->stop();
+    }
+    // Wait briefly for server to actually stop
+    int wait_count = 0;
+    while (g_server_running.load(std::memory_order_acquire) && wait_count < 50) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        wait_count++;
     }
     LOG_INFO("FlexWebServer: stopped!");
 }
