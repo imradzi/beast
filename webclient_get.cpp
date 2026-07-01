@@ -1,6 +1,7 @@
 #include "webclient.h"
 #include <iostream>
 #include <sstream>
+#include <stdexcept>
 #include <fmt/format.h>
 #include "logger/logger.h"
 
@@ -30,8 +31,8 @@ std::tuple<std::string, int64_t> WebClient::Get(const std::string &url, const st
         /* Check for errors */
         if (res != CURLE_OK) {
             std::string errmsg = curl_easy_strerror(res);
-            LOG_ERROR("curl_easy_perform() failed : {}: url: ", errmsg, url);
-            throw errmsg;
+            LOG_ERROR("curl_easy_perform() failed : {}: url: {}", errmsg, url);
+            throw std::runtime_error(errmsg);
         }
         long response_code;
         curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
