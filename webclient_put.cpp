@@ -1,4 +1,5 @@
 #include "webclient.h"
+#include "cacert.h"
 #include <iostream>
 #include <sstream>
 #include <fmt/format.h>
@@ -28,6 +29,7 @@ WebClient::Put(const std::string &url, const std::string &param, const std::unor
     ReadData readData {param};
     auto curl = curl_easy_init();
     if (curl) {
+        curl_easy_setopt(curl, CURLOPT_CAINFO_BLOB, &WebClientCA::GetCACertBlob());
         curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
         curl_easy_setopt(curl, CURLOPT_READFUNCTION, read_callback);
         curl_easy_setopt(curl, CURLOPT_READDATA, &readData);

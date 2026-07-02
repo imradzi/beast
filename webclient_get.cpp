@@ -1,4 +1,5 @@
 #include "webclient.h"
+#include "cacert.h"
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
@@ -10,6 +11,7 @@ std::size_t fnWriteData(void *ptr, std::size_t size, std::size_t nmemb, void *st
 std::tuple<std::string, int64_t> WebClient::Get(const std::string &url, const std::unordered_map<std::string, std::string> &headers) {
     auto curl = curl_easy_init();
     if (curl) {
+        curl_easy_setopt(curl, CURLOPT_CAINFO_BLOB, &WebClientCA::GetCACertBlob());
         curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
         curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
         curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1);  // Prevent "longjmp causes uninitialized stack frame" bug
