@@ -204,8 +204,12 @@ http::message_generator handle_request(
     }
 
     if (path.empty()) {
-        path = path_cat(doc_root, req.target());
-        if (req.target().back() == '/')
+        // Strip query string from target before building file path
+        std::string_view target = req.target();
+        auto queryPos = target.find('?');
+        std::string_view cleanPath = (queryPos != std::string_view::npos) ? target.substr(0, queryPos) : target;
+        path = path_cat(doc_root, cleanPath);
+        if (cleanPath.back() == '/')
             path.append("index.html");
     }
 
@@ -220,12 +224,15 @@ http::message_generator handle_request(
         // SPA fallback: serve index.html for non-file routes (no extension)
         // This allows the PWA client-side router to handle routes like /stock, /sales, etc.
         std::string_view target = req.target();
-        auto dotPos = target.rfind('.');
-        auto slashPos = target.rfind('/');
+        // Strip query string for SPA route check
+        auto queryPos = target.find('?');
+        std::string_view routePath = (queryPos != std::string_view::npos) ? target.substr(0, queryPos) : target;
+        auto dotPos = routePath.rfind('.');
+        auto slashPos = routePath.rfind('/');
         // No file extension found (or dot is before last slash) → SPA fallback
         if (dotPos == std::string_view::npos || (slashPos != std::string_view::npos && dotPos < slashPos)) {
             // Don't fallback for API calls
-            if (target.find("/api/") == std::string_view::npos) {
+            if (routePath.find("/api/") == std::string_view::npos) {
                 auto indexPath = path_cat(doc_root, "index.html");
                 beast::error_code ec2;
                 body.open(indexPath.c_str(), beast::file_mode::scan, ec2);
