@@ -187,7 +187,33 @@ http::message_generator handle_request(
         apply_common_headers(res);
         // Auto-detect JSON responses (start with { or [)
         bool isJson = (!path.empty() && (path[0] == '{' || path[0] == '['));
-        res.set(http::field::content_type, isJson ? "application/json" : "text/html");
+
+        // Detect image content for /api/images/ routes
+        std::string ct;
+        std::string_view target = req.target();
+        bool isImagePath = (target.find("/api/images/") != std::string_view::npos);
+        if (isJson)
+            ct = "application/json";
+        else if (isImagePath && path.size() >= 2) {
+            // Detect image format from magic bytes
+            auto b0 = static_cast<uint8_t>(path[0]);
+            auto b1 = static_cast<uint8_t>(path[1]);
+            if (b0 == 0xFF && b1 == 0xD8)
+                ct = "image/jpeg";
+            else if (path.size() >= 4 && b0 == 0x89 && b1 == 'P'
+                     && path[2] == 'N' && path[3] == 'G')
+                ct = "image/png";
+            else if (path.size() >= 12 && b0 == 'R' && b1 == 'I'
+                     && path[2] == 'F' && path[3] == 'F'
+                     && path[8] == 'W' && path[9] == 'E'
+                     && path[10] == 'B' && path[11] == 'P')
+                ct = "image/webp";
+            else
+                ct = "application/octet-stream";
+        } else
+            ct = "text/html";
+
+        res.set(http::field::content_type, ct);
         res.keep_alive(req.keep_alive());
         res.body() = path;
         res.prepare_payload();
