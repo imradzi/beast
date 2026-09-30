@@ -210,6 +210,20 @@ http::message_generator handle_request(
                 ct = "image/webp";
             else
                 ct = "application/octet-stream";
+        } else if (target.find("/reports/run") != std::string_view::npos && !path.empty()) {
+            // Report downloads: sniff PDF / XLS (BIFF) / XLSX magic bytes
+            auto b0 = static_cast<uint8_t>(path[0]);
+            if (b0 == '%' && path.size() >= 4 && path.compare(0, 4, "%PDF") == 0)
+                ct = "application/pdf";
+            else if (b0 == 0xD0 && path.size() >= 4
+                     && static_cast<uint8_t>(path[1]) == 0xCF
+                     && static_cast<uint8_t>(path[2]) == 0x11
+                     && static_cast<uint8_t>(path[3]) == 0xE0)
+                ct = "application/vnd.ms-excel";
+            else if (b0 == 'P' && path.size() >= 2 && path[1] == 'K')
+                ct = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+            else
+                ct = "application/octet-stream";
         } else
             ct = "text/html";
 
