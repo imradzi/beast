@@ -35,6 +35,7 @@
 #include <boost/make_unique.hpp>
 #include <boost/optional.hpp>
 #include <cstdlib>
+#include <deque>
 #include <filesystem>
 #include <fmt/format.h>
 #include <iostream>
@@ -317,7 +318,11 @@ serve_file:
 
 //------------------------------------------------------------------------------
 
-// Echoes back all received WebSocket messages.
+// Bidirectional WebSocket session with server-initiated push support.
+// Incoming messages are dispatched to process_websocket_command(); outgoing
+// frames (command responses + unsolicited pushes) are serialized through a
+// single write queue on the connection's strand, so writes can be enqueued
+// from any thread (via WsChannel::push) without racing the read loop.
 // This uses the Curiously Recurring Template Pattern so that
 // the same code works with both SSL streams and regular sockets.
 template<class Derived>
@@ -328,8 +333,19 @@ class websocket_session {
         return static_cast<Derived&>(*this);
     }
 
+    struct Outgoing {
+        std::string data;
+        bool text {true};
+    };
+
     beast::flat_buffer buffer_;
     std::shared_ptr<std::vector<char>> res;
+    std::deque<Outgoing> writeQueue_;
+    std::shared_ptr<std::string> currentWrite_;
+    bool writing_ {false};
+    bool closed_ {false};
+    std::string connId_;
+    WsChannel channel_;
 
     // Start the asynchronous operation
     template<class Body, class Allocator>
@@ -373,62 +389,109 @@ private:
                 derived().shared_from_this()));
     }
 
-    void dump(std::shared_ptr<std::vector<char>> res) {
-#ifdef _DEBUG
-        LOG_INFO("WebSocket sending: {} bytes", res->size());
-#endif
+    // Serialize every outgoing frame through the write queue (strand thread).
+    void enqueue(std::string data, bool text) {
+        writeQueue_.push_back(Outgoing {std::move(data), text});
+        if (!writing_) write_next();
+    }
+
+    void write_next() {
+        if (writeQueue_.empty()) {
+            writing_ = false;
+            return;
+        }
+        writing_ = true;
+        auto& front = writeQueue_.front();
+        currentWrite_ = std::make_shared<std::string>(std::move(front.data));
+        bool text = front.text;
+        writeQueue_.pop_front();
+        derived().ws().text(text);
+        derived().ws().async_write(
+            boost::asio::buffer(*currentWrite_),
+            beast::bind_front_handler(
+                &websocket_session::on_write,
+                derived().shared_from_this()));
+    }
+
+    void notify_closed() {
+        if (closed_) return;
+        closed_ = true;
+        if (!connId_.empty()) {
+            process_websocket_closed(connId_);
+        }
     }
 
     void on_read(beast::error_code ec, std::size_t bytes_transferred) {
         boost::ignore_unused(bytes_transferred);
 
         // This indicates that the websocket_session was closed
-        if (ec == websocket::error::closed)
+        if (ec == websocket::error::closed) {
+            notify_closed();
             return;
+        }
 
         if (ec == beast::error::timeout) {
             do_read();  // keep reading after timeout
             return;
         }
 
-        if (ec) return fail(ec, "read");
+        if (ec) {
+            notify_closed();
+            return fail(ec, "read");
+        }
 
-            // Process the message
+        // Process the message
 #ifdef _DEBUG
         LOG_INFO("Received data: {}", beast::buffers_to_string(buffer_.data()));
 #endif
-        res = process_websocket_command(buffer_.data());
+        bool isText = derived().ws().got_text();
+        res = process_websocket_command(buffer_.data(), channel_);
+        buffer_.consume(buffer_.size());
         if (res && !res->empty()) {
-            auto buf = boost::asio::buffer(res->data(), res->size());
-            dump(res);
-            derived().ws().text(derived().ws().got_text());
-            derived().ws().async_write(buf, beast::bind_front_handler(&websocket_session::on_write, derived().shared_from_this()));
-        } else {
-            // No response to send — clear buffer and continue reading
-            buffer_.consume(buffer_.size());
-            do_read();
+#ifdef _DEBUG
+            LOG_INFO("WebSocket sending: {} bytes", res->size());
+#endif
+            enqueue(std::string(res->data(), res->size()), isText);
         }
+        // Reads are independent of writes — keep listening for the next message.
+        do_read();
     }
 
     void on_write(beast::error_code ec, std::size_t bytes_transferred) {
         boost::ignore_unused(bytes_transferred);
 
-        if (ec == beast::error::timeout) {
-            return;
+        currentWrite_.reset();
+        if (ec) {
+            notify_closed();
+            return fail(ec, "write");
         }
-        if (ec) return fail(ec, "write");
-
-        // Clear the buffer
-        buffer_.consume(buffer_.size());
-
-        // Do another read
-        do_read();
+        write_next();
     }
 
 public:
+    // Enqueue a push from ANY thread. Posts onto this connection's strand so
+    // the actual write is serialized with the read/write handlers.
+    void pushMessage(std::string data) {
+        auto self = derived().shared_from_this();
+        net::post(
+            derived().ws().get_executor(),
+            [self, data = std::move(data)]() mutable {
+                self->enqueue(std::move(data), true);
+            });
+    }
+
     // Start the asynchronous operation
     template<class Body, class Allocator>
     void run(http::request<Body, http::basic_fields<Allocator>> req) {
+        static std::atomic<uint64_t> connCounter {0};
+        connId_ = fmt::format("ws-{}", ++connCounter);
+        std::weak_ptr<Derived> weak = derived().weak_from_this();
+        channel_.connId = connId_;
+        channel_.push = [weak](std::string msg) {
+            if (auto self = weak.lock()) {
+                self->pushMessage(std::move(msg));
+            }
+        };
         // Accept the WebSocket upgrade request
         do_accept(std::move(req));
     }
