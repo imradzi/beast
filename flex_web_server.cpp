@@ -318,6 +318,11 @@ serve_file:
 
 //------------------------------------------------------------------------------
 
+// Unique connection-id counter shared by plain + SSL WebSocket sessions
+// (a function-local static in the template below would collide across the
+// two instantiations).
+static std::atomic<uint64_t> g_wsConnCounter {0};
+
 // Bidirectional WebSocket session with server-initiated push support.
 // Incoming messages are dispatched to process_websocket_command(); outgoing
 // frames (command responses + unsolicited pushes) are serialized through a
@@ -483,8 +488,7 @@ public:
     // Start the asynchronous operation
     template<class Body, class Allocator>
     void run(http::request<Body, http::basic_fields<Allocator>> req) {
-        static std::atomic<uint64_t> connCounter {0};
-        connId_ = fmt::format("ws-{}", ++connCounter);
+        connId_ = fmt::format("ws-{}", ++g_wsConnCounter);
         std::weak_ptr<Derived> weak = derived().weak_from_this();
         channel_.connId = connId_;
         channel_.push = [weak](std::string msg) {
