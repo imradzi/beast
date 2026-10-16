@@ -211,8 +211,15 @@ http::message_generator handle_request(
                 ct = "image/webp";
             else
                 ct = "application/octet-stream";
-        } else if (target.find("/reports/run") != std::string_view::npos && !path.empty()) {
-            // Report downloads: sniff PDF / XLS (BIFF) / XLSX magic bytes
+        } else if ((target.find("/reports/run") != std::string_view::npos ||
+                    (target.find("/api/store/") != std::string_view::npos &&
+                     (target.find("/sales/summary") != std::string_view::npos ||
+                      target.find("/invoice") != std::string_view::npos ||
+                      target.find("/purchases/summary") != std::string_view::npos ||
+                      (target.find("/purchases/") != std::string_view::npos &&
+                       target.find("/pdf") != std::string_view::npos)))) &&
+                   !path.empty()) {
+            // Report + trade document downloads: sniff PDF / XLS (BIFF) / XLSX magic bytes
             auto b0 = static_cast<uint8_t>(path[0]);
             if (b0 == '%' && path.size() >= 4 && path.compare(0, 4, "%PDF") == 0)
                 ct = "application/pdf";
