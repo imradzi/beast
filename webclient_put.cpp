@@ -2,6 +2,7 @@
 #include "cacert.h"
 #include <iostream>
 #include <sstream>
+#include <cstring>
 #include <fmt/format.h>
 #include "logger/logger.h"
 
