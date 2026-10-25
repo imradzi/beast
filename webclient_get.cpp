@@ -15,6 +15,8 @@ std::tuple<std::string, int64_t> WebClient::Get(const std::string &url, const st
         curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
         curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
         curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1);  // Prevent "longjmp causes uninitialized stack frame" bug
+        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
         curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "deflate");
         std::stringstream out;
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, fnWriteData);

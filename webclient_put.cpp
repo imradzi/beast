@@ -32,6 +32,8 @@ WebClient::Put(const std::string &url, const std::string &param, const std::unor
     if (curl) {
         curl_easy_setopt(curl, CURLOPT_CAINFO_BLOB, &WebClientCA::GetCACertBlob());
         curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
         curl_easy_setopt(curl, CURLOPT_READFUNCTION, read_callback);
         curl_easy_setopt(curl, CURLOPT_READDATA, &readData);
         curl_easy_setopt(curl, CURLOPT_UPLOAD, 1L);
