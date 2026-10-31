@@ -179,12 +179,19 @@ http::message_generator handle_request(
     // auto cmd = req.target();
     // auto body = req.body();
 
+    int apiStatusCode = 0;  // filled in by process_web_command (0 = keep 200)
     auto [type, path, binarybuf] = process_web_command(req.method(), req.target(), req.body(), [&req](boost::beast::string_view key) -> boost::beast::string_view {
         return req[key];
-    });
+    }, &apiStatusCode);
 
     if (type == 1) {
-        http::response<http::string_body> res {http::status::ok, req.version()};
+        // The handler may have produced a real error status (401/404/503/...).
+        // Before this the gateway always answered 200 and carried the verdict
+        // only in the JSON body, which broke every client that checks res.ok.
+        http::status status = http::status::ok;
+        if (apiStatusCode >= 100 && apiStatusCode <= 599)
+            status = static_cast<http::status>(apiStatusCode);
+        http::response<http::string_body> res {status, req.version()};
         apply_common_headers(res);
         // Auto-detect JSON responses (start with { or [)
         bool isJson = (!path.empty() && (path[0] == '{' || path[0] == '['));

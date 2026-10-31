@@ -21,7 +21,7 @@ struct WsChannel {
     std::function<void(std::string)> push;
 };
 
-extern std::tuple<int, std::string, std::shared_ptr<std::vector<char>>> process_web_command(boost::beast::http::verb method, boost::beast::string_view command, boost::beast::string_view body, std::function<boost::beast::string_view(boost::beast::string_view key)> fnGetHeader);
+extern std::tuple<int, std::string, std::shared_ptr<std::vector<char>>> process_web_command(boost::beast::http::verb method, boost::beast::string_view command, boost::beast::string_view body, std::function<boost::beast::string_view(boost::beast::string_view key)> fnGetHeader, int* outStatusCode = nullptr);
 extern std::shared_ptr<std::vector<char>> process_websocket_command(boost::asio::const_buffer data, const WsChannel& channel);
 // Called exactly once when a WebSocket connection terminates; lets handlers
 // clean up per-connection state (e.g. unsubscribe event fan-out).
