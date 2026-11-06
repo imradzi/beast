@@ -598,8 +598,9 @@ public:
 
         // Apply a reasonable limit to the allowed size
         // of the body in bytes to prevent abuse.
-        // 1MB — sufficient for API calls with line items, stock imports, etc.
-        parser_->body_limit(1000000);
+        // 12MB — API calls, stock imports, and the payment settlement CSV
+        // uploader (the handler enforces its own 10MB cap).
+        parser_->body_limit(12 * 1024 * 1024);
 
         // Set the timeout.
         beast::get_lowest_layer(
