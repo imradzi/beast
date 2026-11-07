@@ -56,9 +56,130 @@ DeepSeekResponse DeepSeekClient::Chat(const std::string& question, const std::st
 
         requestBody["messages"] = messages;
 
-        std::string body = requestBody.dump();
+        result = PostChat(requestBody.dump(), conversationId);
+    } catch (const std::exception& e) {
+        result.errorMessage = fmt::format("Exception: {}", e.what());
+        LOG_ERROR("DeepSeekClient::Chat: {}", result.errorMessage);
+    } catch (...) {
+        result.errorMessage = "Unknown exception occurred.";
+        LOG_ERROR("DeepSeekClient::Chat: {}", result.errorMessage);
+    }
 
-        LOG_INFO("DeepSeekClient::Chat: sending request to {} model={} question_len={}", chatCompletionsEndpoint(), model_, question.size());
+    return result;
+}
+
+DeepSeekResponse DeepSeekClient::ChatMessages(const std::vector<DeepSeekMessage>& messages,
+                                             const std::string& toolsJson) {
+    DeepSeekResponse result;
+
+    if (apiKey_.empty()) {
+        result.errorMessage = "AI API key is not configured.";
+        LOG_ERROR("DeepSeekClient::ChatMessages: {}", result.errorMessage);
+        return result;
+    }
+    if (messages.empty()) {
+        result.errorMessage = "The conversation is empty.";
+        return result;
+    }
+
+    try {
+        nlohmann::json requestBody;
+        requestBody["model"] = model_;
+        requestBody["stream"] = false;
+
+        nlohmann::json arr = nlohmann::json::array();
+        for (const auto& m : messages) {
+            nlohmann::json entry;
+            entry["role"] = m.role;
+            entry["content"] = m.content;
+            if (!m.toolCallId.empty()) entry["tool_call_id"] = m.toolCallId;
+            if (!m.toolCalls.empty()) {
+                nlohmann::json calls = nlohmann::json::array();
+                for (const auto& call : m.toolCalls) {
+                    calls.push_back({{"id", call.id},
+                                     {"type", "function"},
+                                     {{"function", {{"name", call.name}, {"arguments", call.arguments}}}}});
+                }
+                entry["tool_calls"] = calls;
+            }
+            arr.push_back(std::move(entry));
+        }
+        requestBody["messages"] = arr;
+
+        if (!toolsJson.empty()) {
+            try {
+                requestBody["tools"] = nlohmann::json::parse(toolsJson);
+                requestBody["tool_choice"] = "auto";
+            } catch (...) {
+                LOG_WARN("DeepSeekClient::ChatMessages: ignoring malformed tools JSON");
+            }
+        }
+
+        result = PostChat(requestBody.dump(), "");
+        if (result.errorMessage.empty()) {
+            LOG_INFO("DeepSeekClient::ChatMessages: success, model={} tokens={} answer_len={}",
+                     result.modelUsed, result.tokensUsed, result.answer.size());
+        }
+    } catch (const std::exception& e) {
+        result.errorMessage = fmt::format("Exception: {}", e.what());
+        LOG_ERROR("DeepSeekClient::ChatMessages: {}", result.errorMessage);
+    } catch (...) {
+        result.errorMessage = "Unknown exception occurred.";
+        LOG_ERROR("DeepSeekClient::ChatMessages: {}", result.errorMessage);
+    }
+
+    return result;
+}
+
+bool DeepSeekClient::ListModels(std::vector<std::string>& out, std::string& errorMessage) {
+    out.clear();
+    errorMessage.clear();
+
+    if (apiKey_.empty()) {
+        errorMessage = "AI API key is not configured.";
+        return false;
+    }
+
+    try {
+        auto headers = std::unordered_map<std::string, std::string>{
+            {"Authorization", "Bearer " + apiKey_},
+            {"Accept", "application/json"}
+        };
+
+        auto [body, code] = WebClient::Get(modelsEndpoint(), headers);
+        if (code != 200) {
+            errorMessage = fmt::format("HTTP {} from {}", code, modelsEndpoint());
+            return false;
+        }
+
+        auto j = nlohmann::json::parse(body);
+        if (!j.contains("data") || !j["data"].is_array()) {
+            errorMessage = "Unexpected /models response.";
+            return false;
+        }
+        for (const auto& m : j["data"]) {
+            if (m.contains("id") && m["id"].is_string()) {
+                out.push_back(m["id"].get<std::string>());
+            }
+        }
+        return true;
+    } catch (const std::exception& e) {
+        errorMessage = e.what();
+        return false;
+    } catch (...) {
+        errorMessage = "Unknown exception while listing models.";
+        return false;
+    }
+}
+
+// ── Shared request/response path ──────────────────────────────────
+
+DeepSeekResponse DeepSeekClient::PostChat(const std::string& requestBody,
+                                          const std::string& fallbackConversationId) {
+    DeepSeekResponse result;
+    try {
+        LOG_INFO("DeepSeekClient: sending request to {} model={} body_len={}",
+                 chatCompletionsEndpoint(), model_, requestBody.size());
 
         auto headers = std::unordered_map<std::string, std::string>{
             {"Authorization", "Bearer " + apiKey_},
@@ -66,9 +187,10 @@ DeepSeekResponse DeepSeekClient::Chat(const std::string& question, const std::st
             {"Accept", "application/json"}
         };
 
-        auto [responseStr, responseCode] = WebClient::Post(chatCompletionsEndpoint(), body, headers);
+        auto [responseStr, responseCode] =
+            WebClient::PostWithTimeout(chatCompletionsEndpoint(), requestBody, headers, timeoutSeconds_);
 
-        LOG_INFO("DeepSeekClient::Chat: response code={} body_len={}", responseCode, responseStr.size());
+        LOG_INFO("DeepSeekClient: response code={} body_len={}", responseCode, responseStr.size());
 
         if (responseCode != 200) {
             // Try to extract error message from response
@@ -82,7 +204,7 @@ DeepSeekResponse DeepSeekClient::Chat(const std::string& question, const std::st
             } catch (...) {
                 result.errorMessage = fmt::format("HTTP {}: {}", responseCode, responseStr);
             }
-            LOG_ERROR("DeepSeekClient::Chat: {}", result.errorMessage);
+            LOG_ERROR("DeepSeekClient: {}", result.errorMessage);
             return result;
         }
 
@@ -92,8 +214,37 @@ DeepSeekResponse DeepSeekClient::Chat(const std::string& question, const std::st
         if (responseJson.contains("choices") && responseJson["choices"].is_array() &&
             !responseJson["choices"].empty()) {
             const auto& choice = responseJson["choices"][0];
-            if (choice.contains("message") && choice["message"].contains("content")) {
-                result.answer = choice["message"]["content"].get<std::string>();
+
+            if (choice.contains("finish_reason") && choice["finish_reason"].is_string()) {
+                result.finishReason = choice["finish_reason"].get<std::string>();
+            }
+
+            if (choice.contains("message")) {
+                const auto& message = choice["message"];
+                if (message.contains("content") && message["content"].is_string()) {
+                    result.answer = message["content"].get<std::string>();
+                }
+                // Tool calls: the model is asking the caller to fetch data.
+                if (message.contains("tool_calls") && message["tool_calls"].is_array()) {
+                    for (const auto& tc : message["tool_calls"]) {
+                        DeepSeekToolCall call;
+                        if (tc.contains("id") && tc["id"].is_string()) {
+                            call.id = tc["id"].get<std::string>();
+                        }
+                        if (tc.contains("function") && tc["function"].is_object()) {
+                            const auto& fn = tc["function"];
+                            if (fn.contains("name") && fn["name"].is_string()) {
+                                call.name = fn["name"].get<std::string>();
+                            }
+                            if (fn.contains("arguments")) {
+                                call.arguments = fn["arguments"].is_string()
+                                                     ? fn["arguments"].get<std::string>()
+                                                     : fn["arguments"].dump();
+                            }
+                        }
+                        result.toolCalls.push_back(std::move(call));
+                    }
+                }
             }
         }
 
@@ -112,18 +263,22 @@ DeepSeekResponse DeepSeekClient::Chat(const std::string& question, const std::st
         // Use the response ID as conversation_id for multi-turn continuity
         if (responseJson.contains("id")) {
             result.conversationId = responseJson["id"].get<std::string>();
-        } else if (!conversationId.empty()) {
-            result.conversationId = conversationId;
+        } else if (!fallbackConversationId.empty()) {
+            result.conversationId = fallbackConversationId;
         }
 
-        LOG_INFO("DeepSeekClient::Chat: success, model={} tokens={} answer_len={}", result.modelUsed, result.tokensUsed, result.answer.size());
-        LOG_INFO("DeepSeekClient::Chat: result: {}", result.answer);
+        if (result.answer.empty() && result.toolCalls.empty()) {
+            result.errorMessage = "The model returned an empty answer.";
+        }
+
+        LOG_INFO("DeepSeekClient: success, model={} tokens={} answer_len={}",
+                 result.modelUsed, result.tokensUsed, result.answer.size());
     } catch (const std::exception& e) {
         result.errorMessage = fmt::format("Exception: {}", e.what());
-        LOG_ERROR("DeepSeekClient::Chat: {}", result.errorMessage);
+        LOG_ERROR("DeepSeekClient: {}", result.errorMessage);
     } catch (...) {
         result.errorMessage = "Unknown exception occurred.";
-        LOG_ERROR("DeepSeekClient::Chat: {}", result.errorMessage);
+        LOG_ERROR("DeepSeekClient: {}", result.errorMessage);
     }
 
     return result;
