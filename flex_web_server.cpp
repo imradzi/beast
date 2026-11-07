@@ -663,6 +663,23 @@ public:
         if (!response_queue_.empty()) {
             bool keep_alive = response_queue_.front().keep_alive();
 
+            // Refresh the stream's expiry before every response write.
+            // beast::tcp_stream keeps a separate absolute deadline for reads
+            // and writes, and expires_after() only arms a timer when no
+            // operation of that direction is pending. do_read() runs while
+            // the response write is already in flight, so it only refreshes
+            // the READ deadline — the WRITE deadline stays at whatever it was
+            // when the connection was accepted. Once a keep-alive connection
+            // is older than 30s, the next response write sees an expired
+            // deadline, closes the socket and fails with
+            // "write: The socket was closed due to a timeout". The client
+            // then reports "TypeError: fetch failed / SocketError: other side
+            // closed" even though the handler succeeded (the request may even
+            // have been fully processed). Write is never pending here, so
+            // this call is always honoured.
+            beast::get_lowest_layer(derived().stream())
+                .expires_after(std::chrono::seconds(30));
+
             beast::async_write(
                 derived().stream(),
                 std::move(response_queue_.front()),
