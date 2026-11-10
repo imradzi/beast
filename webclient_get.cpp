@@ -9,14 +9,20 @@
 std::size_t fnWriteData(void *ptr, std::size_t size, std::size_t nmemb, void *stream);
 
 std::tuple<std::string, int64_t> WebClient::Get(const std::string &url, const std::unordered_map<std::string, std::string> &headers) {
+    return GetWithTimeout(url, 30L, headers);
+}
+
+std::tuple<std::string, int64_t> WebClient::GetWithTimeout(const std::string &url, long timeoutSeconds, const std::unordered_map<std::string, std::string> &headers) {
+    const long total = timeoutSeconds > 0 ? timeoutSeconds : 30L;
+    const long connect = total < 10L ? total : 10L;
     auto curl = curl_easy_init();
     if (curl) {
         curl_easy_setopt(curl, CURLOPT_CAINFO_BLOB, &WebClientCA::GetCACertBlob());
         curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
         curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
         curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1);  // Prevent "longjmp causes uninitialized stack frame" bug
-        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
-        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
+        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, connect);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, total);
         curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "deflate");
         std::stringstream out;
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, fnWriteData);

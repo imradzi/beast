@@ -10,5 +10,9 @@ public:
     static std::tuple<std::string, int64_t> PostWithTimeout(const std::string &url, const std::string &body, const std::unordered_map<std::string, std::string> &headers, long timeoutSeconds);
     static std::tuple<std::string, int64_t> Put(const std::string &url, const std::string &body, const std::unordered_map<std::string, std::string> &headers = {});
     static std::tuple<std::string, int64_t> Get(const std::string &url, const std::unordered_map<std::string, std::string> &headers = {});
+    /// Same as Get but with an explicit total timeout. Used by background
+    /// pollers (ppServer update check) so shutdown is never held up by a slow
+    /// upstream.
+    static std::tuple<std::string, int64_t> GetWithTimeout(const std::string &url, long timeoutSeconds, const std::unordered_map<std::string, std::string> &headers = {});
     static std::tuple<std::string, int64_t> Delete(const std::string &url, const std::unordered_map<std::string, std::string> &headers = {});
 };
